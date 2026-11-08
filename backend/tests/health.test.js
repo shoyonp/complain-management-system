@@ -1,5 +1,8 @@
 import request from 'supertest';
-import app from '../src/app.js';
+import createApp from '../src/app.js';
+import { fakeVerifyIdToken } from './helpers/auth.js';
+
+const app = createApp({ verifyIdToken: fakeVerifyIdToken });
 
 describe('GET /health', () => {
   it('returns 200 with the success envelope', async () => {

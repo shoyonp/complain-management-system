@@ -28,6 +28,23 @@ export const errorHandler = (err, req, res, _next) => {
       path: issue.path.join('.'),
       message: issue.message,
     }));
+  } else if (err?.name === 'ValidationError' && err?.errors) {
+    // Mongoose schema validation.
+    statusCode = 400;
+    code = 'VALIDATION_ERROR';
+    message = 'Request validation failed.';
+    details = Object.values(err.errors).map((issue) => ({
+      path: issue.path,
+      message: issue.message,
+    }));
+  } else if (err?.name === 'CastError') {
+    statusCode = 400;
+    code = 'VALIDATION_ERROR';
+    message = 'Invalid identifier format.';
+  } else if (err?.code === 11000) {
+    statusCode = 409;
+    code = 'CONFLICT';
+    message = 'That record already exists.';
   } else if (err?.type === 'entity.parse.failed') {
     statusCode = 400;
     code = 'VALIDATION_ERROR';

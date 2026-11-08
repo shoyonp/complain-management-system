@@ -23,6 +23,18 @@ export class ApiError extends Error {
     return new ApiError(403, 'FORBIDDEN', message);
   }
 
+  static profileRequired(message = 'Complete your profile to continue.') {
+    return new ApiError(403, 'PROFILE_REQUIRED', message);
+  }
+
+  static accountNotActive(message = 'Your account is not active.') {
+    return new ApiError(403, 'ACCOUNT_NOT_ACTIVE', message);
+  }
+
+  static emailNotVerified(message = 'Verify your email address to continue.') {
+    return new ApiError(403, 'EMAIL_NOT_VERIFIED', message);
+  }
+
   static notFound(message = 'Resource not found.') {
     return new ApiError(404, 'NOT_FOUND', message);
   }

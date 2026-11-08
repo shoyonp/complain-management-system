@@ -1,14 +1,37 @@
 import axios from 'axios';
+import { auth } from './firebase.js';
 
-// The blueprint's versioned base path (/api/v1) is introduced in M1 together
-// with the first feature endpoints.
+const baseUrl = (import.meta.env.VITE_API_URL ?? 'http://localhost:5000').replace(/\/$/, '');
+
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:5000',
+  baseURL: `${baseUrl}/api/v1`,
   headers: { 'Content-Type': 'application/json' },
   timeout: 15_000,
 });
 
-// TODO(M1): attach the Firebase ID token before each request,
-// sign out on 401 and route to /403 on 403 (§4.4).
+// Attach a fresh Firebase ID token to every request (blueprint §4.4).
+api.interceptors.request.use(async (config) => {
+  const user = auth.currentUser;
+
+  if (user) {
+    const token = await user.getIdToken();
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+
+  return config;
+});
+
+// A 401 means the session is no longer valid (expired or revoked token): drop
+// the local session and let the route guards send the user to /login.
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    if (error.response?.status === 401) {
+      await auth.signOut().catch(() => {});
+    }
+
+    return Promise.reject(error);
+  },
+);
 
 export default api;
