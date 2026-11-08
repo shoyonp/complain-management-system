@@ -1,0 +1,15 @@
+{
+  "name": "diu-complaint-management-system",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Privacy-preserving student complaint management system for Dhaka International University",
+  "scripts": {
+    "lint": "npm --prefix backend run lint && npm --prefix frontend run lint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "npm --prefix backend run test"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.10"
+  }
+}

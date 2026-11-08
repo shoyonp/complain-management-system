@@ -1,0 +1,182 @@
+/* M0 placeholder styling. Replaced by Tailwind + shadcn/ui design tokens in M1. */
+
+:root {
+  color-scheme: light dark;
+
+  --bg: #f4f6fb;
+  --surface: #ffffff;
+  --text: #14213d;
+  --muted: #5a6478;
+  --border: #dfe4ef;
+  --accent: #1d4ed8;
+  --ok: #15803d;
+  --ok-soft: #dcfce7;
+  --warn: #b45309;
+  --warn-soft: #fef3c7;
+  --error: #b91c1c;
+  --error-soft: #fee2e2;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1424;
+    --surface: #141d31;
+    --text: #e8edf7;
+    --muted: #9aa6bd;
+    --border: #26324b;
+    --accent: #93b4ff;
+    --ok: #4ade80;
+    --ok-soft: #14351f;
+    --warn: #fbbf24;
+    --warn-soft: #3a2c08;
+    --error: #f87171;
+    --error-soft: #3d1616;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    Inter,
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    'Noto Sans Bengali',
+    sans-serif;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app-shell {
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: 1.5rem;
+}
+
+.card {
+  width: min(38rem, 100%);
+  padding: 2.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.5rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0 0 0.75rem;
+  font-size: clamp(1.6rem, 4vw, 2.1rem);
+  line-height: 1.2;
+}
+
+.lede {
+  margin: 0 0 2rem;
+  color: var(--muted);
+  font-size: 1rem;
+}
+
+.status-list {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0 0 1.5rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+}
+
+.status-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.9rem;
+}
+
+.status-list dt {
+  color: var(--muted);
+}
+
+.status-list dd {
+  margin: 0;
+  font-weight: 500;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.status--checking {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.status--ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.status--unreachable {
+  background: var(--error-soft);
+  color: var(--error);
+}
+
+.status-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: currentcolor;
+}
+
+.error-note {
+  margin: 0 0 1.5rem;
+  padding: 0.75rem 1rem;
+  background: var(--error-soft);
+  border-radius: 0.5rem;
+  color: var(--error);
+  font-size: 0.875rem;
+}
+
+.hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+code {
+  padding: 0.1rem 0.35rem;
+  background: color-mix(in srgb, var(--border) 55%, transparent);
+  border-radius: 0.25rem;
+  font-size: 0.85em;
+}
+
+.link {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
