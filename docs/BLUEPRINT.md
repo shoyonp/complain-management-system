@@ -2,7 +2,7 @@
 
 Case study: Dhaka International University. Developer scope: complete MERN web application, AI-ready but AI-independent.
 
-**For AI coding agents (OpenCode):** this file is the source of truth. Work on one milestone at a time (Section 13). Do not add technologies outside Section 1.8 without asking. The backend is ONE file, `backend/index.js` (Section 5); do not split it into folders. Never add Python/ML code. AI exists only as the provider interface in Section 12.
+**For AI coding agents (OpenCode):** this file is the source of truth. Work on one milestone at a time (Section 13). Do not add technologies outside Section 1.8 without asking. The backend is ONE file, `backend/index.js` (Section 5); do not split it into folders. Use the official MongoDB Node.js driver (`mongodb` package) with MongoDB Atlas. Do NOT use Mongoose. Never add Python/ML code. AI exists only as the provider interface in Section 12.
 
 ## 0. Key Decisions at a Glance
 
@@ -164,7 +164,7 @@ No Python, FastAPI, TypeScript, Redux, GraphQL or Docker required.
     v
   Express API (Node.js)
     middleware: helmet > cors > rate-limit > json > sanitize > verifyToken > loadUser > authorize > validate
-    route handlers -> service functions -> Mongoose models (all in backend/index.js)
+    route handlers -> service functions -> MongoDB collections via the native driver (all in backend/index.js)
     |-- Privacy module (pseudonym + identity vault + audit)
     |-- AI integration layer (provider interface, disabled by default)
     v
@@ -306,7 +306,7 @@ backend/
 1. Imports and env validation (fail fast if a variable is missing)
 2. Constants: ROLES, STATUS, PRIORITY, TRANSITIONS, PERMISSIONS
 3. Firebase Admin init and MongoDB connection
-4. Mongoose schemas and models (all collections from Section 6)
+4. Collection handles (`db.collection('complaints')` etc.), index creation at startup (`ensureIndexes()`), and Zod document shapes for inserts (all collections from Section 6)
 5. Helpers: ApiError, asyncHandler, pagination, trackingCode, crypto (AES-GCM), pseudonym (HMAC), redactor, audit logger
 6. Middleware: verifyToken, loadUser, authorize, validate (Zod), rate limiters
 7. Serializers (role-specific field allowlists)
@@ -334,8 +334,8 @@ helmet > cors(whitelist) > rateLimit > express.json(limit 100kb) > mongoSanitize
 - Success: `{ success: true, data, meta? }`. Error: `{ success: false, error: { code, message, details? } }`.
 - Error codes: `VALIDATION_ERROR`, `UNAUTHENTICATED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `RATE_LIMITED`, `INVALID_TRANSITION`.
 - Pagination: `?page=1&limit=20`, `meta: { page, limit, total, totalPages }`, max limit 100.
-- Plural nouns, kebab-case URLs, camelCase JSON, singular Mongoose models.
-- Route handlers stay thin: they call named service functions. Business rules and Mongoose calls live in those functions, not inside the handlers.
+- Plural nouns, kebab-case URLs, camelCase JSON, collection names plural camelCase (`complaintUpdates`).
+- Route handlers stay thin: they call named service functions. Business rules and database calls live in those functions, not inside the handlers.
 
 ### 5.4 Environment variables
 
@@ -348,6 +348,16 @@ AI_ENABLED=false, AI_SERVICE_URL, AI_SERVICE_API_KEY, AI_CALLBACK_SECRET
 ```
 
 ## 6. MongoDB Database Schema and Relationships
+
+**Driver note (no Mongoose):** use the official `mongodb` driver with Atlas. Practical consequences:
+- Collections are plain `db.collection('name')` handles. The tables below describe document shapes, not Mongoose schemas.
+- Validate every document with Zod before `insertOne`/`updateOne` (server-side allowlist of fields).
+- Set `createdAt` and `updatedAt` yourself (`new Date()`) in the service functions.
+- Convert ids with `new ObjectId(id)` and validate them first (`ObjectId.isValid`).
+- No `populate`: fetch related documents with a second query or an aggregation `$lookup`.
+- Create all indexes once at startup in `ensureIndexes()` (`createIndex` is safe to repeat).
+- Transactions (if used) need an Atlas replica set: `client.startSession()` + `session.withTransaction(...)`.
+- Soft rules like unique `trackingCode` and unique `{complaint, supporterKey}` are enforced by unique indexes; catch duplicate-key error code `11000` and return 409.
 
 ### 6.1 Relationship overview
 
@@ -526,7 +536,7 @@ A database dump alone cannot identify a student: complaints hold only an HMAC ha
 - **Protected (default):** hidden from all staff; reveal only via audited path.
 - **Identified:** student consents; assigned staff see name and student ID. Record the choice in the timeline.
 
-**Role-specific serializers** (`complaint.serializer.js`): one function per audience returns an allowlist of fields. Never return a Mongoose document directly.
+**Role-specific serializers** (`complaint.serializer.js`): one function per audience returns an allowlist of fields. Never return a raw database document directly.
 
 | Field | Student (own) | Department | Admin |
 |---|---|---|---|

@@ -36,6 +36,7 @@
 - Write tests for authorization and privacy rules.
 - The backend is ONE file: backend/index.js, with numbered banner sections (Blueprint Section 5.1). Do not create backend folders or split it.
 - Blueprint changed: public board (Sections 8.4, 9.10, 10.6, 11.9) is added but is built in M6, not now.
+- Database: official `mongodb` driver with Atlas. Do NOT use Mongoose. No populate; use second queries or $lookup.
 
 # Final Rule:
 
