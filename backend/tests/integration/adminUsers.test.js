@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { ROLES, USER_STATUS, User, createApp } from '../../index.js';
+import { ROLES, USER_STATUS, collections, createApp } from '../../index.js';
 import { as, fakeVerifyIdToken } from '../helpers/auth.js';
 import { clearTestDb, startTestDb, stopTestDb } from '../helpers/db.js';
 import { createAdmin, createOfficer, createStudent } from '../helpers/factories.js';
@@ -234,7 +234,7 @@ describe('PATCH /api/v1/admin/users/:id/verify', () => {
       .send({ decision: 'approve' });
 
     expect(res.status).toBe(403);
-    expect(await User.findById(target._id).then((user) => user.status)).toBe(USER_STATUS.PENDING);
+    expect((await collections.users.findOne({ _id: target._id })).status).toBe(USER_STATUS.PENDING);
   });
 });
 
@@ -254,6 +254,6 @@ describe('role model integrity', () => {
       });
 
     expect(res.status).toBe(400);
-    expect(await User.countDocuments({ role: ROLES.ADMIN })).toBe(1);
+    expect(await collections.users.countDocuments({ role: ROLES.ADMIN })).toBe(1);
   });
 });

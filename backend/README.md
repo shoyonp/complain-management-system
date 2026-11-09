@@ -126,8 +126,10 @@ sections in this fixed order:
 index.js
   // ===== 1. IMPORTS AND ENV =====              env validation, --memdb boot
   // ===== 2. CONSTANTS =====                    ROLES, USER_STATUS, PERMISSIONS
-  // ===== 3. FIREBASE ADMIN AND MONGODB =====   lazy firebase-admin, connectDb
-  // ===== 4. SCHEMAS AND MODELS =====           User model and indexes
+  // ===== 3. FIREBASE ADMIN AND MONGODB =====   lazy firebase-admin, MongoClient
+  // ===== 4. COLLECTION HANDLES, INDEXES AND =====
+  //         DOCUMENT SHAPES =====                 collections.users,
+  //                                              ensureIndexes, Zod shapes
   // ===== 5. HELPERS =====                      ApiError, asyncHandler, logger,
   //                                              pagination, escapeRegex, health
   // ===== 6. MIDDLEWARE =====                   verifyToken, loadUser, authorize,
@@ -142,8 +144,9 @@ tests/                                          Jest + Supertest
 ```
 
 Conventions: handlers in section 9 validate, call one service from section 8,
-and serialize the result from section 7. Business rules and Mongoose calls live
-in services; success is `{ success: true, data, meta? }`.
+and serialize the result from section 7. Business rules and driver calls
+(`collections.users.find(...)`) live in services; success is
+`{ success: true, data, meta? }`.
 
 ## Deviations from the blueprint
 
@@ -152,6 +155,8 @@ in services; success is `{ success: true, data, meta? }`.
 - **Extra error codes** beyond the blueprint list: `PROFILE_REQUIRED`, `ACCOUNT_NOT_ACTIVE`, `EMAIL_NOT_VERIFIED` — the client needs to tell onboarding states apart.
 - **Firebase Admin is imported dynamically** because its `jose` dependency is ESM-only and breaks Jest when tests inject a fake verifier.
 - **Two exports for tests**: `app` is the production instance and `createApp({ verifyIdToken })` lets Supertest inject a fake verifier, as §14.1 requires.
+- **`email` keeps a unique index** even though §6.2 only lists `firebaseUid`: registration returns `409` on a duplicate email, so removing it would change behavior.
+- **`ensureIndexes()` runs on every boot** (server and `--seed`), and the tests call it directly; `createIndex` is idempotent.
 
 ## Not in this milestone
 

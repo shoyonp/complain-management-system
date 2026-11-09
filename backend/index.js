@@ -17,7 +17,7 @@ import cors from 'cors';
 import express, { Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import helmet from 'helmet';
-import mongoose from 'mongoose';
+import { MongoClient, ObjectId } from 'mongodb';
 import { ZodError, z } from 'zod';
 
 // Load `.env` for local development only. Production hosts (Render/Railway)
@@ -173,72 +173,110 @@ const verifyFirebaseIdToken = async (token, checkRevoked = false) => {
   return auth.verifyIdToken(token, checkRevoked);
 };
 
-const connectDb = async (uri = env.MONGODB_URI) => {
-  mongoose.set('strictQuery', true);
+// Native MongoDB driver (blueprint §6). One client per process; `db` is the
+// database named in MONGODB_URI (or `test` when the URI omits it, matching the
+// previous driver's default).
+let client;
+let db;
+let dbConnected = false;
 
-  await mongoose.connect(uri, {
+// Collection handles are resolved lazily (section 4), so importing this module
+// never requires a live connection — tests connect in beforeAll.
+export const getDb = () => {
+  if (!db) {
+    throw new Error('MongoDB is not connected. Call connectDb() first.');
+  }
+
+  return db;
+};
+
+export const connectDb = async (uri = env.MONGODB_URI) => {
+  client = new MongoClient(uri, {
     serverSelectionTimeoutMS: 10_000,
   });
 
+  await client.connect();
+  db = client.db();
+  dbConnected = true;
+
   logger.info('MongoDB connected', {
-    host: mongoose.connection.host,
-    database: mongoose.connection.name,
+    host: client.options.hosts?.[0]?.host ?? 'unknown',
+    database: db.databaseName,
   });
 };
 
-const disconnectDb = async () => {
-  await mongoose.disconnect();
+export const disconnectDb = async () => {
+  await client?.close();
+  client = null;
+  db = null;
+  dbConnected = false;
 };
 
-const dbState = () => (mongoose.connection.readyState === 1 ? 'connected' : 'disconnected');
+// Synchronous so /health can report readiness without awaiting a ping.
+const dbState = () => (dbConnected ? 'connected' : 'disconnected');
 
-// ===== 4. SCHEMAS AND MODELS =====
-const studentProfileSchema = new mongoose.Schema(
-  {
-    studentId: { type: String, trim: true },
-    academicDepartment: { type: String, trim: true },
-    batch: { type: String, trim: true },
-    semester: { type: String, trim: true },
+// ===== 4. COLLECTION HANDLES, INDEXES AND DOCUMENT SHAPES =====
+// Plain `db.collection('name')` handles, per blueprint §6. Getters keep them
+// usable before connect while still reading like the blueprint's examples.
+export const collections = {
+  get users() {
+    return getDb().collection('users');
   },
-  { _id: false },
-);
+};
 
-const userSchema = new mongoose.Schema(
-  {
-    firebaseUid: { type: String, required: true, unique: true, index: true },
-    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    name: { type: String, required: true, trim: true, maxlength: 120 },
-    phone: { type: String, trim: true, maxlength: 30 },
-    role: {
-      type: String,
-      enum: Object.values(ROLES),
-      default: ROLES.STUDENT,
-      required: true,
-    },
-    status: {
-      type: String,
-      enum: Object.values(USER_STATUS),
-      default: USER_STATUS.PENDING,
-      required: true,
-    },
-    studentProfile: { type: studentProfileSchema, default: undefined },
-    departmentRef: { type: mongoose.Schema.Types.ObjectId, ref: 'Department', default: null },
-    permissions: {
-      type: [{ type: String, enum: Object.values(PERMISSIONS) }],
-      default: [],
-    },
-    verifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
-    verifiedAt: { type: Date, default: null },
-    // Admin-only note recorded with a verification decision.
-    verificationNote: { type: String, trim: true, maxlength: 500 },
-  },
-  { timestamps: true },
-);
+// Safe to run on every boot: createIndex is idempotent. Index names are left to
+// the driver so they match the ones created previously (no duplicates on an
+// existing Atlas database).
+export const ensureIndexes = async () => {
+  await collections.users.createIndex({ firebaseUid: 1 }, { unique: true });
+  // Not in §6.2's index list, but registration returns 409 on a duplicate
+  // email, so the unique constraint is part of the current behavior.
+  await collections.users.createIndex({ email: 1 }, { unique: true });
+  await collections.users.createIndex({ role: 1, status: 1 });
+  // Sparse: officers and admins have no studentProfile at all.
+  await collections.users.createIndex(
+    { 'studentProfile.studentId': 1 },
+    { unique: true, sparse: true },
+  );
+};
 
-userSchema.index({ role: 1, status: 1 });
-userSchema.index({ 'studentProfile.studentId': 1 }, { unique: true, sparse: true });
+// Document shapes replace the Mongoose schema: every write is validated here
+// before insertOne/updateOne (§6 driver note). Fields match §6.2 exactly.
+const objectIdField = z.instanceof(ObjectId);
 
-export const User = mongoose.model('User', userSchema);
+const studentProfileDocument = z.strictObject({
+  studentId: z.string().min(1).max(30),
+  academicDepartment: z.string().max(120).optional(),
+  batch: z.string().max(40).optional(),
+  semester: z.string().max(40).optional(),
+});
+
+const userDocumentSchema = z.strictObject({
+  _id: objectIdField.optional(),
+  firebaseUid: z.string().min(1),
+  email: z.string().min(1),
+  name: z.string().min(1).max(120),
+  phone: z.string().max(30).optional(),
+  role: z.enum(Object.values(ROLES)),
+  status: z.enum(Object.values(USER_STATUS)),
+  studentProfile: studentProfileDocument.optional(),
+  departmentRef: objectIdField.nullable().optional(),
+  permissions: z.array(z.enum(Object.values(PERMISSIONS))),
+  verifiedBy: objectIdField.nullable().optional(),
+  verifiedAt: z.date().nullable().optional(),
+  verificationNote: z.string().max(500).optional(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+const userUpdateSchema = userDocumentSchema
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, {
+    error: 'An update must change at least one field.',
+  });
+
+const assertUserDocument = (document) => userDocumentSchema.parse(document);
+const assertUserUpdate = (update) => userUpdateSchema.parse(update);
 
 // ===== 5. HELPERS =====
 // Operational errors use one of the blueprint's stable error codes so the
@@ -369,7 +407,7 @@ const createVerifyToken = (verifyIdToken, { checkRevoked = false } = {}) =>
 // without a profile is not an error for status checks (GET /auth/me), so the
 // middleware reports PROFILE_REQUIRED and the client routes to onboarding.
 const loadUser = asyncHandler(async (req, _res, next) => {
-  const user = await User.findOne({ firebaseUid: req.auth.uid });
+  const user = await collections.users.findOne({ firebaseUid: req.auth.uid });
 
   if (!user) {
     throw ApiError.profileRequired();
@@ -493,7 +531,7 @@ const sanitizeValue = (value, depth = 0) => {
 // Removes MongoDB operator keys ($gt, $where) and dotted/prototype keys from the
 // request body. Replaces express-mongo-sanitize, which does not support
 // Express 5 (it assigns to the read-only req.query getter). Queries are already
-// validated with strict Zod schemas and never passed to Mongoose raw.
+// validated with strict Zod schemas and never passed to the driver raw.
 export const sanitizeRequest = (req, _res, next) => {
   if (req.body && typeof req.body === 'object') {
     const clean = sanitizeValue(req.body);
@@ -535,7 +573,7 @@ const authLimiter = rateLimit({
 });
 
 // ===== 7. SERIALIZERS =====
-// Role-aware serializers: never return a Mongoose document directly
+// Role-aware serializers: never return a database document directly
 // (blueprint §8.1). `firebaseUid` and other internals stay server-side.
 
 const refId = (value) => {
@@ -591,28 +629,41 @@ const registerStudentProfile = async ({ auth, payload }) => {
     throw ApiError.badRequest('The authentication token does not contain an email address.');
   }
 
-  const existing = await User.exists({ firebaseUid: auth.uid });
+  const existing = await collections.users.findOne(
+    { firebaseUid: auth.uid },
+    { projection: { _id: 1 } },
+  );
   if (existing) {
     throw ApiError.conflict('A profile already exists for this account.');
   }
 
+  const now = new Date();
+  const document = assertUserDocument({
+    firebaseUid: auth.uid,
+    // Mongoose used to lowercase this; keep the unique index semantics.
+    email: auth.email.toLowerCase(),
+    name: payload.name,
+    ...(payload.phone !== undefined ? { phone: payload.phone } : {}),
+    // Server-decided fields — never taken from the request body.
+    role: ROLES.STUDENT,
+    status: USER_STATUS.PENDING,
+    permissions: [],
+    studentProfile: {
+      studentId: payload.studentId,
+      academicDepartment: payload.academicDepartment,
+      batch: payload.batch,
+      semester: payload.semester,
+    },
+    departmentRef: null,
+    verifiedBy: null,
+    verifiedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+
   try {
-    return await User.create({
-      firebaseUid: auth.uid,
-      email: auth.email,
-      name: payload.name,
-      phone: payload.phone,
-      // Server-decided fields — never taken from the request body.
-      role: ROLES.STUDENT,
-      status: USER_STATUS.PENDING,
-      permissions: [],
-      studentProfile: {
-        studentId: payload.studentId,
-        academicDepartment: payload.academicDepartment,
-        batch: payload.batch,
-        semester: payload.semester,
-      },
-    });
+    const { insertedId } = await collections.users.insertOne(document);
+    return { ...document, _id: insertedId };
   } catch (error) {
     if (error?.code === 11000) {
       throw ApiError.conflict('That email address or student ID is already registered.');
@@ -622,15 +673,24 @@ const registerStudentProfile = async ({ auth, payload }) => {
 };
 
 const updateOwnProfile = async (user, payload) => {
+  const changes = {};
+
   if (payload.name !== undefined) {
-    user.name = payload.name;
+    changes.name = payload.name;
   }
   if (payload.phone !== undefined) {
-    user.phone = payload.phone;
+    changes.phone = payload.phone;
   }
+  // Timestamps are set by hand now (blueprint §6 driver note).
+  changes.updatedAt = new Date();
 
-  await user.save();
-  return user;
+  assertUserUpdate(changes);
+
+  return collections.users.findOneAndUpdate(
+    { _id: user._id },
+    { $set: changes },
+    { returnDocument: 'after' },
+  );
 };
 
 const listUsers = async ({ role, status, q, page, limit }) => {
@@ -648,18 +708,24 @@ const listUsers = async ({ role, status, q, page, limit }) => {
   }
 
   const [items, total] = await Promise.all([
-    User.find(filter)
+    collections.users
+      .find(filter)
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
-      .limit(limit),
-    User.countDocuments(filter),
+      .limit(limit)
+      .toArray(),
+    collections.users.countDocuments(filter),
   ]);
 
   return { items, meta: buildPaginationMeta({ page, limit, total }) };
 };
 
 const verifyUser = async ({ actor, targetId, decision, note }) => {
-  const target = await User.findById(targetId);
+  if (!ObjectId.isValid(targetId)) {
+    throw ApiError.badRequest('Invalid identifier format.');
+  }
+
+  const target = await collections.users.findOne({ _id: new ObjectId(targetId) });
 
   if (!target) {
     throw ApiError.notFound('User not found.');
@@ -673,17 +739,25 @@ const verifyUser = async ({ actor, targetId, decision, note }) => {
     throw ApiError.conflict('Only pending accounts can be verified.');
   }
 
-  target.status =
-    decision === VERIFICATION_DECISIONS.APPROVE ? USER_STATUS.ACTIVE : USER_STATUS.REJECTED;
-  target.verifiedBy = actor._id;
-  target.verifiedAt = new Date();
+  const now = new Date();
+  const changes = {
+    status: decision === VERIFICATION_DECISIONS.APPROVE ? USER_STATUS.ACTIVE : USER_STATUS.REJECTED,
+    verifiedBy: actor._id,
+    verifiedAt: now,
+    updatedAt: now,
+  };
 
   if (note !== undefined) {
-    target.verificationNote = note;
+    changes.verificationNote = note;
   }
 
-  await target.save();
-  return target;
+  assertUserUpdate(changes);
+
+  return collections.users.findOneAndUpdate(
+    { _id: target._id },
+    { $set: changes },
+    { returnDocument: 'after' },
+  );
 };
 
 // ===== 9. ROUTES =====
@@ -871,16 +945,9 @@ const errorHandler = (err, req, res, _next) => {
       path: issue.path.join('.'),
       message: issue.message,
     }));
-  } else if (err?.name === 'ValidationError' && err?.errors) {
-    // Mongoose schema validation.
-    statusCode = 400;
-    code = 'VALIDATION_ERROR';
-    message = 'Request validation failed.';
-    details = Object.values(err.errors).map((issue) => ({
-      path: issue.path,
-      message: issue.message,
-    }));
-  } else if (err?.name === 'CastError') {
+  } else if (err?.name === 'BSONError') {
+    // Invalid ObjectId or BSON value; routes validate ids first, so this is a
+    // defensive fallback with the same shape the old CastError branch had.
     statusCode = 400;
     code = 'VALIDATION_ERROR';
     message = 'Invalid identifier format.';
@@ -987,18 +1054,26 @@ const seedFirstAdmin = async () => {
     });
   }
 
-  const admin = await User.findOneAndUpdate(
+  const now = new Date();
+  const changes = {
+    email: env.SEED_ADMIN_EMAIL,
+    name,
+    role: ROLES.ADMIN,
+    status: USER_STATUS.ACTIVE,
+    permissions: [PERMISSIONS.REVEAL_IDENTITY, PERMISSIONS.MANAGE_USERS],
+    updatedAt: now,
+  };
+
+  assertUserUpdate(changes);
+
+  const admin = await collections.users.findOneAndUpdate(
     { firebaseUid: firebaseUser.uid },
     {
-      $set: {
-        email: env.SEED_ADMIN_EMAIL,
-        name,
-        role: ROLES.ADMIN,
-        status: USER_STATUS.ACTIVE,
-        permissions: [PERMISSIONS.REVEAL_IDENTITY, PERMISSIONS.MANAGE_USERS],
-      },
+      $set: changes,
+      // The upsert filter already supplies firebaseUid.
+      $setOnInsert: { createdAt: now },
     },
-    { upsert: true, new: true, setDefaultsOnInsert: true },
+    { upsert: true, returnDocument: 'after' },
   );
 
   logger.info('First admin ready', { id: admin._id.toString(), email: admin.email });
@@ -1010,6 +1085,7 @@ const stopMemdb = async () => {
 
 const start = async () => {
   await connectDb();
+  await ensureIndexes();
 
   const server = app.listen(env.PORT, () => {
     logger.info('API listening', { port: env.PORT, environment: env.NODE_ENV });
@@ -1049,6 +1125,8 @@ const start = async () => {
 
 const runSeed = async () => {
   await connectDb();
+  await ensureIndexes();
+
   try {
     await seedFirstAdmin();
   } finally {

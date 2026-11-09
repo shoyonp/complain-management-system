@@ -1,23 +1,29 @@
-import mongoose from 'mongoose';
+import { fileURLToPath } from 'node:url';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { User } from '../../index.js';
+import { connectDb, disconnectDb, ensureIndexes, getDb } from '../../index.js';
+
+// Absolute cache path: the default is resolved against process.cwd(), which
+// breaks when tests are run from the repo root (`npm --prefix backend test`).
+const downloadDir = fileURLToPath(
+  new URL('../../node_modules/.cache/mongodb-memory-server', import.meta.url),
+);
 
 let mongod;
 
 export const startTestDb = async () => {
-  mongod = await MongoMemoryServer.create();
-  await mongoose.connect(mongod.getUri());
+  mongod = await MongoMemoryServer.create({ binary: { downloadDir } });
+  await connectDb(mongod.getUri());
   // Build indexes (unique firebaseUid/email, sparse studentId) before specs run.
-  await User.syncIndexes();
+  await ensureIndexes();
 };
 
 export const stopTestDb = async () => {
-  await mongoose.disconnect();
+  await disconnectDb();
   await mongod?.stop();
   mongod = undefined;
 };
 
 export const clearTestDb = async () => {
-  const collections = await mongoose.connection.db.collections();
+  const collections = await getDb().collections();
   await Promise.all(collections.map((collection) => collection.deleteMany({})));
 };

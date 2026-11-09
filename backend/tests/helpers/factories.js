@@ -1,4 +1,4 @@
-import { PERMISSIONS, ROLES, USER_STATUS, User } from '../../index.js';
+import { PERMISSIONS, ROLES, USER_STATUS, collections } from '../../index.js';
 
 let counter = 0;
 
@@ -7,15 +7,26 @@ const nextId = () => {
   return counter;
 };
 
+// Native driver inserts have no timestamps/defaults; supply both here so every
+// fixture matches what the services write.
+const insertUser = async (document) => {
+  const now = new Date();
+  const user = { createdAt: now, updatedAt: now, ...document };
+
+  await collections.users.insertOne(user);
+  return user;
+};
+
 export const createStudent = (overrides = {}) => {
   const id = nextId();
 
-  return User.create({
+  return insertUser({
     firebaseUid: `fb-created-student-${id}`,
     email: `created.student.${id}@example.com`,
     name: 'Test Student',
     role: ROLES.STUDENT,
     status: USER_STATUS.PENDING,
+    permissions: [],
     studentProfile: {
       studentId: `DIU-2026-${id}`,
       academicDepartment: 'CSE',
@@ -27,7 +38,7 @@ export const createStudent = (overrides = {}) => {
 };
 
 export const createAdmin = (overrides = {}) =>
-  User.create({
+  insertUser({
     firebaseUid: 'fb-admin-active',
     email: 'admin@example.com',
     name: 'Test Admin',
@@ -38,11 +49,12 @@ export const createAdmin = (overrides = {}) =>
   });
 
 export const createOfficer = (overrides = {}) =>
-  User.create({
+  insertUser({
     firebaseUid: 'fb-dept-active',
     email: 'officer@example.com',
     name: 'Test Officer',
     role: ROLES.DEPARTMENT,
     status: USER_STATUS.ACTIVE,
+    permissions: [],
     ...overrides,
   });

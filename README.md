@@ -19,7 +19,7 @@ docs/       BLUEPRINT.md (source of truth) and project documents
 | Layer    | Choice                                                                 |
 | -------- | ---------------------------------------------------------------------- |
 | Frontend | React, Vite, React Router, Axios, TanStack Query, Tailwind + shadcn/ui |
-| Backend  | Node.js, Express, MongoDB (Mongoose)                                   |
+| Backend  | Node.js, Express, MongoDB (official driver)                            |
 | Auth     | Firebase Authentication; roles live in MongoDB                         |
 | Testing  | Jest + Supertest (API), Vitest + React Testing Library (web)           |
 | Tooling  | ESLint 9+ flat config, Prettier, conventional commits                  |

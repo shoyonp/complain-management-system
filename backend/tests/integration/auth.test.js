@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { ROLES, USER_STATUS, User, createApp } from '../../index.js';
+import { ROLES, USER_STATUS, collections, createApp } from '../../index.js';
 import { as, fakeVerifyIdToken } from '../helpers/auth.js';
 import { clearTestDb, startTestDb, stopTestDb } from '../helpers/db.js';
 import { createAdmin, createStudent } from '../helpers/factories.js';
@@ -44,7 +44,7 @@ describe('POST /api/v1/auth/register-profile', () => {
 
     expect(res.status).toBe(403);
     expect(res.body.error.code).toBe('EMAIL_NOT_VERIFIED');
-    expect(await User.countDocuments()).toBe(0);
+    expect(await collections.users.countDocuments()).toBe(0);
   });
 
   it('creates a pending student profile and never returns firebaseUid', async () => {
@@ -64,7 +64,7 @@ describe('POST /api/v1/auth/register-profile', () => {
     });
     expect(res.body.data).not.toHaveProperty('firebaseUid');
 
-    const stored = await User.findOne({ firebaseUid: 'fb-student-pending' });
+    const stored = await collections.users.findOne({ firebaseUid: 'fb-student-pending' });
     expect(stored.status).toBe(USER_STATUS.PENDING);
     expect(stored.role).toBe(ROLES.STUDENT);
   });
@@ -77,7 +77,7 @@ describe('POST /api/v1/auth/register-profile', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION_ERROR');
-    expect(await User.countDocuments()).toBe(0);
+    expect(await collections.users.countDocuments()).toBe(0);
   });
 
   it('rejects an invalid student id', async () => {
