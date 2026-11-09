@@ -2,7 +2,7 @@
 
 Case study: Dhaka International University. Developer scope: complete MERN web application, AI-ready but AI-independent.
 
-**For AI coding agents (OpenCode):** this file is the source of truth. Work on one milestone at a time (Section 13). Do not add technologies outside Section 1.8 without asking. Never add Python/ML code. AI exists only as the provider interface in Section 12.
+**For AI coding agents (OpenCode):** this file is the source of truth. Work on one milestone at a time (Section 13). Do not add technologies outside Section 1.8 without asking. The backend is ONE file, `backend/index.js` (Section 5); do not split it into folders. Never add Python/ML code. AI exists only as the provider interface in Section 12.
 
 ## 0. Key Decisions at a Glance
 
@@ -15,6 +15,8 @@ Case study: Dhaka International University. Developer scope: complete MERN web a
 | Category/priority/department | Student suggests, admin confirms (triage) | Manual workflow that AI will later pre-fill |
 | AI | Provider interface + no-op default + feature flag | App works fully without AI |
 | Hosting | Vercel (frontend), Render or Railway (API), MongoDB Atlas | Express on serverless is awkward; check current free-tier limits |
+| Backend layout | Single `backend/index.js` with ordered, commented sections | Easier for one developer to follow; boundaries stay as clearly named functions |
+| Public board | Opt-in + admin-moderated, with separate redacted text | Students can see and support issues without exposing identity |
 
 ## 1. Final Project Scope and Requirements
 
@@ -58,6 +60,7 @@ A web system where DIU students submit complaints with identity protected from g
 - CSV export of analytics and anonymized dataset export.
 - CSV import of valid student IDs for automatic verification.
 - Duplicate grouping (link complaints to a master complaint).
+- Public Complaint Board (opt-in, admin-moderated, with a Support button): Sections 6, 8, 9.10, 10.6, 11.9.
 
 ### 1.5 Could have / Later
 
@@ -113,6 +116,13 @@ No Python, FastAPI, TypeScript, Redux, GraphQL or Docker required.
 - FR-C9: Admin can link duplicates; system shows keyword-similar complaints.
 - FR-C10: Sensitive categories (e.g., Harassment) are admin-only and never routed to normal departments.
 
+**Public board (Should)**
+- FR-B1: When submitting, a student may tick "Show on public board" (default off).
+- FR-B2: Admin approves with an edited public title and summary (separate from the private text) or declines. Sensitive categories can never be published.
+- FR-B3: Students see published complaints in a feed (title, summary, category, status, date) and can press Support once per complaint.
+- FR-B4: The owner or an admin can unpublish at any time.
+- FR-B5: The feed never shows identity or any private field.
+
 **Privacy**
 - FR-P1: Staff views never contain student name, ID, email or any identifier.
 - FR-P2: Identity reveal requires `REVEAL_IDENTITY`, a written reason, and is audit-logged.
@@ -154,7 +164,7 @@ No Python, FastAPI, TypeScript, Redux, GraphQL or Docker required.
     v
   Express API (Node.js)
     middleware: helmet > cors > rate-limit > json > sanitize > verifyToken > loadUser > authorize > validate
-    routes -> controllers -> services -> models (Mongoose)
+    route handlers -> service functions -> Mongoose models (all in backend/index.js)
     |-- Privacy module (pseudonym + identity vault + audit)
     |-- AI integration layer (provider interface, disabled by default)
     v
@@ -167,7 +177,7 @@ No Python, FastAPI, TypeScript, Redux, GraphQL or Docker required.
 
 ### 3.2 Practical technical decisions
 
-1. **Layering (route -> controller -> service -> model).** Controllers read the request and send the response. Business rules live in services (testable, swappable).
+1. **Layering inside one file.** Route handlers stay thin and call named service functions; business rules live in those functions (testable, swappable). One file, but still clean sections.
 2. **Firebase handles passwords, MongoDB handles everything else.** Firebase UID links to the Mongo user. Never store passwords.
 3. **REST, resource-based URLs, role-aware responses.** Serializers return different fields per audience; this is the main privacy mechanism.
 4. **Server decides everything sensitive.** Frontend hiding is for usability only.
@@ -197,6 +207,7 @@ No Python, FastAPI, TypeScript, Redux, GraphQL or Docker required.
 | `/student/complaints` | student | My complaints |
 | `/student/complaints/:id` | student | Detail + timeline + follow-up + rating |
 | `/student/profile` | student | Profile and privacy settings |
+| `/student/board` | student | Public board feed with Support button |
 | `/department` | department | Dashboard |
 | `/department/complaints` | department | Assigned complaints |
 | `/department/complaints/:id` | department | Detail + update/status actions |
@@ -209,6 +220,7 @@ No Python, FastAPI, TypeScript, Redux, GraphQL or Docker required.
 | `/admin/analytics` | admin | Reports and CSV export |
 | `/admin/audit-logs` | admin | Audit log viewer |
 | `/admin/settings` | admin | AI flag, SLA days, reopen window |
+| `/admin/board-requests` | admin | Pending public-board requests: approve with edited text, or decline |
 | `/403`, `*` | Any | Forbidden, not found |
 
 ### 4.2 Folder structure (feature-based)
@@ -239,6 +251,7 @@ frontend/
       complaints/  {pages, components, hooks, api, schemas}
       dashboard/   {student, department, admin widgets}
       users/ departments/ categories/ audit/
+      board/       {pages, components, hooks, api}   # public feed + Support
       analytics/   {charts, hooks, api}
       ai/          {SuggestionPanel, hooks, api}   # renders nothing when AI is off
     components/
@@ -276,43 +289,37 @@ frontend/
 
 ## 5. Backend Architecture and Folder Structure
 
-### 5.1 Folder structure
+### 5.1 Folder structure (single-file backend)
 
 ```
 backend/
-  package.json                # type: module
+  package.json                # "type": "module"
   .env.example
-  src/
-    server.js                 # connect DB, start HTTP
-    app.js                    # express app, middleware, routes, error handler
-    config/
-      env.js                  # validates env vars at startup (fail fast)
-      db.js
-      firebase.js             # firebase-admin init
-      constants.js            # ROLES, STATUS, PRIORITY, TRANSITIONS, PERMISSIONS
-    middleware/
-      verifyToken.js  loadUser.js  authorize.js  validate.js
-      rateLimiters.js  errorHandler.js  notFound.js
-    modules/
-      auth/ users/ departments/ categories/
-      complaints/     routes, controller, service, schema, complaint.model.js,
-                      complaint.serializer.js, stateMachine.js
-      updates/        complaintUpdate.model.js
-      privacy/        identityVault.service.js, pseudonym.js, crypto.js, redactor.js
-      audit/          audit.model.js, audit.service.js, audit.routes.js
-      analytics/      routes, controller, service (aggregation pipelines)
-      notifications/  (Should)
-      settings/
-      ai/             ai.routes.js, aiOrchestrator.js, providers/{noop,mock,http}.js, ai.contract.md
-    utils/
-      ApiError.js, asyncHandler.js, pagination.js, trackingCode.js, logger.js
-    seed/
-      seed.js                 # categories, departments, first admin, demo data
-  tests/
-    unit/ integration/ helpers/
+  index.js                    # the ENTIRE backend lives here
+  tests/                      # tests import { app } from '../index.js'
   docs/
-    openapi.yaml (or API.md), postman_collection.json
+    openapi.yaml (or API.md), postman_collection.json, ai.contract.md
 ```
+
+**Why one file:** easier for one developer to read top to bottom, no import wiring. It stays clean because `index.js` is divided into numbered banner sections (`// ===== 7. SERIALIZERS =====`) in this fixed order:
+
+1. Imports and env validation (fail fast if a variable is missing)
+2. Constants: ROLES, STATUS, PRIORITY, TRANSITIONS, PERMISSIONS
+3. Firebase Admin init and MongoDB connection
+4. Mongoose schemas and models (all collections from Section 6)
+5. Helpers: ApiError, asyncHandler, pagination, trackingCode, crypto (AES-GCM), pseudonym (HMAC), redactor, audit logger
+6. Middleware: verifyToken, loadUser, authorize, validate (Zod), rate limiters
+7. Serializers (role-specific field allowlists)
+8. Services: state machine, complaint logic, identity vault, analytics, board, AI orchestrator and providers (Noop/Mock/Http)
+9. Routes, grouped by area: auth, meta, my complaints, staff complaints, admin, analytics, export, board, notifications, AI
+10. 404 handler, error handler
+11. Startup: `export const app`; call `listen()` only when `NODE_ENV !== 'test'`; run `seed()` when started with `--seed` (`node index.js --seed`)
+
+**Rules for the single file:**
+- Do not split it into folders. Keep the sections in the order above.
+- Route handlers stay thin: validate, call one service function, send the response.
+- AI code stays inside the "AI INTEGRATION" part of section 8; the rest of the file only calls `aiOrchestrator`.
+- If the file passes about 2,500 lines, say so; the section order maps one-to-one onto modules, so splitting later is mechanical.
 
 ### 5.2 Request pipeline
 
@@ -328,7 +335,7 @@ helmet > cors(whitelist) > rateLimit > express.json(limit 100kb) > mongoSanitize
 - Error codes: `VALIDATION_ERROR`, `UNAUTHENTICATED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `RATE_LIMITED`, `INVALID_TRANSITION`.
 - Pagination: `?page=1&limit=20`, `meta: { page, limit, total, totalPages }`, max limit 100.
 - Plural nouns, kebab-case URLs, camelCase JSON, singular Mongoose models.
-- No business logic in controllers; no Mongoose calls in controllers.
+- Route handlers stay thin: they call named service functions. Business rules and Mongoose calls live in those functions, not inside the handlers.
 
 ### 5.4 Environment variables
 
@@ -359,7 +366,7 @@ complaints ---- department -----------+
   +-- complaintUpdates (many per complaint: timeline, notes)
   +-- identityLinks    (one per complaint: encrypted userId)  <- the vault
 
-auditLogs, notifications, counters, settings are supporting collections.
+auditLogs, notifications, counters, settings, complaintSupports are supporting collections.
 ```
 
 **Design rule:** `complaints` never contains a reference to the student. The only bridges are (a) the one-way `ownerKey` hash for the student's own list and (b) the encrypted `identityLinks` record for audited reveal.
@@ -404,10 +411,13 @@ Indexes: `firebaseUid` unique, `{role, status}`, `studentProfile.studentId` uniq
 | `isSensitive` | Copied from category at triage; drives visibility |
 | `duplicateOf` | Master complaint |
 | `aiSuggestion` | Embedded, empty until AI is enabled (Section 12) |
+| `visibility` | private (default), public_requested, public |
+| `publicTitle`, `publicSummary` | Admin-edited text shown on the board; the private `description` is never shown there |
+| `publishedAt`, `supportCount` | Board fields (`supportCount` is a cached number) |
 | `feedback` | `{ rating 1-5, comment, at }` |
 | `resolvedAt`, `closedAt`, `createdAt`, `updatedAt` | Dates |
 
-Indexes: `trackingCode` unique; `ownerKey + createdAt`; `status + priority + createdAt`; `department + status`; `category`; text index on `title` + `description` with `default_language: 'none'` (no wrong stemming for Bangla).
+Indexes: `trackingCode` unique; `visibility + publishedAt`; `ownerKey + createdAt`; `status + priority + createdAt`; `department + status`; `category`; text index on `title` + `description` with `default_language: 'none'` (no wrong stemming for Bangla).
 
 **complaintUpdates** (timeline and notes)
 
@@ -431,6 +441,8 @@ Students see the department label (e.g., "Examination Office"), never a staff me
 **notifications (Should)**: `user`, `type`, `trackingCode`, `message`, `readAt`, `createdAt`.
 
 **settings (singleton)**: `aiEnabled`, `reopenWindowDays` (7), `slaDays` per priority, `autoApplyThreshold` (future AI, default null).
+
+**complaintSupports (Should)**: `complaint`, `supporterKey` (HMAC of the supporter's userId with `PSEUDONYM_SECRET`, so nobody can see who supported), `createdAt`. Unique index on `{complaint, supporterKey}` makes one Support per student.
 
 ### 6.3 Embed vs reference
 
@@ -488,6 +500,9 @@ Claims live in tokens and refresh slowly (up to an hour); a demoted or suspended
 | Manage users/departments/categories | No | No | Yes | Yes |
 | Analytics | Own stats | Own department stats | Full | Full |
 | Audit logs | No | No | Yes | Yes |
+| Request public board for own complaint | Yes | - | - | - |
+| Approve / unpublish board posts | Unpublish own | No | Yes | Yes |
+| View board and press Support | Yes | No | View only | View only |
 
 ### 7.6 Frontend gating (usability only)
 
@@ -566,6 +581,17 @@ A database dump alone cannot identify a student: complaints hold only an HMAC ha
 | Spam or flooding | Rate limits, length limits, account status checks |
 | Student A reads student B's complaint | Ownership filter via `ownerKey` in every student query |
 | Privilege escalation | Role never accepted from client; server-side checks and tests |
+
+### 8.4 Public board privacy rules (Should)
+
+- **Separate text.** The board shows only `publicTitle` and `publicSummary`, written or edited by an admin at approval. The private `description` is never exposed there.
+- **Opt-in and moderated.** Default is `private`. Nothing is published without the student's request and an admin's approval.
+- **Never sensitive.** Complaints in sensitive categories cannot be requested or approved for the board (checked in the service function, not only in the UI).
+- **Own serializer.** `serializeBoardItem` returns only: id/tracking code, publicTitle, publicSummary, category name, status, publishedAt, supportCount, and whether the current user already supported. No location, no student fields, no staff names, no internal notes.
+- **Admin checklist at approval:** remove room numbers, dates, names and anything that points to one person.
+- **Anonymous support.** Supporters are stored as HMAC hashes, so a Support never reveals who pressed it.
+- **Unpublish anytime.** The owner or an admin can set the complaint back to `private`; it disappears from the feed immediately.
+- **Audit.** Publishing and unpublishing write audit entries.
 
 ## 9. Complete REST API Documentation
 
@@ -710,6 +736,35 @@ Response 201:
 
 Status codes: 200, 201, 204, 400 (validation), 401, 403, 404, 409 (conflict/invalid transition), 429, 500, 503 (AI disabled).
 
+### 9.10 Public board (Should)
+
+| Method | Path | Access | Description |
+|---|---|---|---|
+| GET | `/board` | S, A | Published complaints. Query: `page`, `limit`, `category`, `sort` (recent or supported) |
+| POST | `/board/:id/support` | S | Add Support (one per student; 409 if already supported) |
+| DELETE | `/board/:id/support` | S | Remove own Support |
+| POST | `/my/complaints/:id/public-request` | S | Body: `{ "request": true }` or `false`. Not allowed for sensitive categories |
+| POST | `/my/complaints/:id/unpublish` | S | Owner takes the post down |
+| GET | `/complaints?visibility=public_requested` | A | Moderation queue |
+| PATCH | `/complaints/:id/publish` | A | Body: `publicTitle`, `publicSummary` |
+| PATCH | `/complaints/:id/unpublish` | A | Takes the post down |
+
+Sample board item:
+
+```json
+{
+  "id": "6702...",
+  "trackingCode": "C-2026-0045",
+  "publicTitle": "AC not working in a CSE classroom",
+  "publicSummary": "Students report the air conditioning has been out for about two weeks.",
+  "category": "Infrastructure",
+  "status": "in_progress",
+  "publishedAt": "2026-11-09T08:30:00Z",
+  "supportCount": 14,
+  "supportedByMe": false
+}
+```
+
 ## 10. Student, Admin and Department Workflows
 
 ### 10.1 Complaint status state machine
@@ -782,6 +837,15 @@ Student submits form
 ```
 
 Writing two collections can use a MongoDB transaction on Atlas. Alternative: write the vault record first and delete it if the complaint save fails. Pick one and test it.
+
+### 10.6 Public board flow (Should)
+
+1. Student ticks "Show on public board" while submitting (or later from the complaint detail). Status of the request: `public_requested`.
+2. Admin opens `/admin/board-requests`, reads the complaint, writes `publicTitle` and `publicSummary` (starting from the student's text, removing anything identifying) and approves, or declines.
+3. On approval `visibility = public`, `publishedAt` is set, and the post appears in `/student/board`.
+4. Other students read the post and press Support. The cached `supportCount` updates; admins can use it as a hint when setting priority.
+5. Status changes on the complaint show on the board automatically (status only, no private notes).
+6. The owner or an admin can unpublish; the post disappears at once.
 
 ## 11. UI/UX Design and Dashboard Planning
 
@@ -864,13 +928,21 @@ Admin complaint detail: two columns. Left = complaint and timeline. Right = Tria
 - Server-side pagination and filters; keep filter state in the URL query string.
 - Accessibility: labels on inputs, focus states, keyboard-reachable modals, `aria-live` for toasts, 44 px touch targets.
 
+### 11.9 Public board page (Should)
+
+- Route `/student/board`: a card feed (title, summary, category badge, status badge, date) with a large Support button and a count.
+- Filters: category and sort (Recent / Most supported). Infinite scroll or "Load more".
+- Already-supported cards show a filled button; pressing again removes Support.
+- A small note at the top: "Posts are reviewed by the administration. Personal details are never shown."
+- Admin side: `/admin/board-requests` shows the original text on the left and editable public title/summary on the right, with Approve and Decline buttons.
+
 ## 12. Future AI/ML Integration Architecture
 
 ### 12.1 Principles
 
 1. The app never depends on AI. Every AI call is optional, time-limited and failure-tolerant. With `AI_ENABLED=false` nothing changes.
 2. AI suggests, humans decide. Output is stored as a suggestion; admin accepts or rejects. Auto-apply is a later setting.
-3. One boundary. All AI code lives in `modules/ai`; the rest of the app only talks to `aiOrchestrator`.
+3. One boundary. All AI code lives in the clearly marked AI INTEGRATION part of `index.js`; the rest of the file only talks to `aiOrchestrator`.
 4. HTTP contract, any language for the AI service.
 5. No identity ever crosses the boundary. Only redacted text and metadata are sent.
 
@@ -1014,7 +1086,7 @@ About 12 weeks part-time. Keep the order; build vertical slices.
 | **M3 Triage and workflow** | 5 | State machine, admin list/filters, triage panel, assignment, status actions, updates/notes, department dashboard | submit -> triage -> assign -> in progress -> resolved works across three roles |
 | **M4 Management and audit** | 6 | Departments, categories, officer creation, permissions, settings, audit logs, identity reveal | Reveal only with permission and creates audit record |
 | **M5 Analytics and duplicates** | 7 | Aggregation endpoints, charts, CSV export, similar complaints, duplicate linking | Dashboard numbers match DB |
-| **M6 Student extras** | 8 | Withdraw, feedback, reopen, notifications, empty/error states, polish | All Must and chosen Should items done |
+| **M6 Student extras** | 8 | Withdraw, feedback, reopen, notifications, public board, empty/error states, polish | All Must and chosen Should items done |
 | **M7 AI-ready layer** | 9 | Provider interface, Noop/Mock/Http providers, orchestrator, `aiSuggestion`, SuggestionPanel, contract docs, dataset export, mock AI server | Mock on: suggestions appear and can be accepted. Off: app unchanged |
 | **M8 Hardening and testing** | 10 | Automated tests, security review (8.2), rate limits, accessibility/responsive pass | Tests green; no high-severity findings; usable at 360 px |
 | **M9 Deployment and UAT** | 11 | Production deploy, demo data, test with 5-10 students and 2-3 staff, bug fixes | Feedback collected; critical bugs fixed |
@@ -1029,7 +1101,7 @@ About 12 weeks part-time. Keep the order; build vertical slices.
 
 ### 13.2 If time runs short, cut in this order
 
-Notifications -> CSV import -> officer-level assignment -> feedback/reopen -> dataset export. Never cut: privacy module, RBAC, audit log, state machine, authorization tests.
+Notifications -> CSV import -> officer-level assignment -> public board -> feedback/reopen -> dataset export. Never cut: privacy module, RBAC, audit log, state machine, authorization tests.
 
 ### 13.3 Risks
 
@@ -1056,6 +1128,8 @@ Notifications -> CSV import -> officer-level assignment -> feedback/reopen -> da
 
 Firebase in tests: inject the token verifier as a dependency (production uses `firebase-admin`; tests pass a fake). Never add a debug login route to the real app.
 
+Single-file backend: export the Express `app` from `index.js` and call `listen()` only when `NODE_ENV !== 'test'`, so Supertest can import it.
+
 ### 14.2 Tests that matter most
 
 | Area | Example tests |
@@ -1070,6 +1144,7 @@ Firebase in tests: inject the token verifier as a dependency (production uses `f
 | Account state | Pending, suspended, unverified users blocked |
 | AI off | With `AI_ENABLED=false` submission/triage work, AI endpoints return 503; failing/timing-out mock still lets submission succeed |
 | Concurrency | 20 parallel submissions give 20 unique tracking codes |
+| Public board | Private complaints never appear in `/board`; sensitive categories cannot be requested or published; board responses contain no description, location or user fields; a second Support from the same student returns 409; unpublish removes the post at once |
 
 Targets: authorization matrix 100% covered; services at least 70% line coverage; CI passes before merging to `main`.
 
