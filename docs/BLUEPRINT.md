@@ -2,7 +2,7 @@
 
 Case study: Dhaka International University. Developer scope: complete MERN web application, AI-ready but AI-independent.
 
-**For AI coding agents (OpenCode):** this file is the source of truth. Work on one milestone at a time (Section 13). Do not add technologies outside Section 1.8 without asking. The backend is ONE file, `backend/index.js` (Section 5); do not split it into folders. Use the official MongoDB Node.js driver (`mongodb` package) with MongoDB Atlas. Do NOT use Mongoose. Never add Python/ML code. AI exists only as the provider interface in Section 12.
+**For AI coding agents (OpenCode):** this file is the source of truth. Work on one milestone at a time (Section 13). Do not add technologies outside Section 1.8 without asking. The backend follows the folder structure in Section 5.1 (several files, not one). Use the official MongoDB Node.js driver (`mongodb` package) with MongoDB Atlas. Do NOT use Mongoose. Never add Python/ML code. AI exists only as the provider interface in Section 12.
 
 ## 0. Key Decisions at a Glance
 
@@ -15,7 +15,7 @@ Case study: Dhaka International University. Developer scope: complete MERN web a
 | Category/priority/department | Student suggests, admin confirms (triage) | Manual workflow that AI will later pre-fill |
 | AI | Provider interface + no-op default + feature flag | App works fully without AI |
 | Hosting | Vercel (frontend), Render or Railway (API), MongoDB Atlas | Express on serverless is awkward; check current free-tier limits |
-| Backend layout | Single `backend/index.js` with ordered, commented sections | Easier for one developer to follow; boundaries stay as clearly named functions |
+| Backend layout | Folders per module (routes, controller, service, schema) | Small files are easier to find, test and ask an AI agent to change |
 | Public board | Opt-in + admin-moderated, with separate redacted text | Students can see and support issues without exposing identity |
 
 ## 1. Final Project Scope and Requirements
@@ -164,7 +164,7 @@ No Python, FastAPI, TypeScript, Redux, GraphQL or Docker required.
     v
   Express API (Node.js)
     middleware: helmet > cors > rate-limit > json > sanitize > verifyToken > loadUser > authorize > validate
-    route handlers -> service functions -> MongoDB collections via the native driver (all in backend/index.js)
+    route handlers -> service functions -> MongoDB collections via the native driver
     |-- Privacy module (pseudonym + identity vault + audit)
     |-- AI integration layer (provider interface, disabled by default)
     v
@@ -177,7 +177,7 @@ No Python, FastAPI, TypeScript, Redux, GraphQL or Docker required.
 
 ### 3.2 Practical technical decisions
 
-1. **Layering inside one file.** Route handlers stay thin and call named service functions; business rules live in those functions (testable, swappable). One file, but still clean sections.
+1. **Layering (route -> controller -> service -> database).** Controllers read the request and send the response. Business rules and database calls live in services (testable, swappable).
 2. **Firebase handles passwords, MongoDB handles everything else.** Firebase UID links to the Mongo user. Never store passwords.
 3. **REST, resource-based URLs, role-aware responses.** Serializers return different fields per audience; this is the main privacy mechanism.
 4. **Server decides everything sensitive.** Frontend hiding is for usability only.
@@ -289,37 +289,46 @@ frontend/
 
 ## 5. Backend Architecture and Folder Structure
 
-### 5.1 Folder structure (single-file backend)
+### 5.1 Folder structure (native MongoDB driver, no Mongoose)
 
 ```
 backend/
   package.json                # "type": "module"
   .env.example
-  index.js                    # the ENTIRE backend lives here
-  tests/                      # tests import { app } from '../index.js'
+  src/
+    server.js                 # connect DB, ensureIndexes(), start HTTP
+    app.js                    # express app, middleware, routes, error handler (exports app)
+    config/
+      env.js                  # validates env vars at startup (fail fast)
+      db.js                   # MongoClient, getDb(), collection(name)
+      indexes.js              # ensureIndexes(): all createIndex calls
+      firebase.js             # firebase-admin init
+      constants.js            # ROLES, STATUS, PRIORITY, TRANSITIONS, PERMISSIONS
+    middleware/
+      verifyToken.js  loadUser.js  authorize.js  validate.js
+      rateLimiters.js  errorHandler.js  notFound.js
+    modules/                  # each module: routes, controller, service, schema (Zod)
+      auth/ users/ departments/ categories/
+      complaints/             # + complaint.serializer.js, stateMachine.js
+      updates/
+      privacy/                # identityVault.service.js, pseudonym.js, crypto.js, redactor.js
+      audit/
+      analytics/
+      board/                  # public board (Should)
+      notifications/          # (Should)
+      settings/
+      ai/                     # aiOrchestrator.js, providers/{noop,mock,http}.js, ai.routes.js
+    utils/
+      ApiError.js, asyncHandler.js, pagination.js, trackingCode.js, logger.js
+    seed/
+      seed.js                 # categories, departments, first admin, demo data (npm run seed)
+  tests/
+    unit/ integration/ helpers/
   docs/
     openapi.yaml (or API.md), postman_collection.json, ai.contract.md
 ```
 
-**Why one file:** easier for one developer to read top to bottom, no import wiring. It stays clean because `index.js` is divided into numbered banner sections (`// ===== 7. SERIALIZERS =====`) in this fixed order:
-
-1. Imports and env validation (fail fast if a variable is missing)
-2. Constants: ROLES, STATUS, PRIORITY, TRANSITIONS, PERMISSIONS
-3. Firebase Admin init and MongoDB connection
-4. Collection handles (`db.collection('complaints')` etc.), index creation at startup (`ensureIndexes()`), and Zod document shapes for inserts (all collections from Section 6)
-5. Helpers: ApiError, asyncHandler, pagination, trackingCode, crypto (AES-GCM), pseudonym (HMAC), redactor, audit logger
-6. Middleware: verifyToken, loadUser, authorize, validate (Zod), rate limiters
-7. Serializers (role-specific field allowlists)
-8. Services: state machine, complaint logic, identity vault, analytics, board, AI orchestrator and providers (Noop/Mock/Http)
-9. Routes, grouped by area: auth, meta, my complaints, staff complaints, admin, analytics, export, board, notifications, AI
-10. 404 handler, error handler
-11. Startup: `export const app`; call `listen()` only when `NODE_ENV !== 'test'`; run `seed()` when started with `--seed` (`node index.js --seed`)
-
-**Rules for the single file:**
-- Do not split it into folders. Keep the sections in the order above.
-- Route handlers stay thin: validate, call one service function, send the response.
-- AI code stays inside the "AI INTEGRATION" part of section 8; the rest of the file only calls `aiOrchestrator`.
-- If the file passes about 2,500 lines, say so; the section order maps one-to-one onto modules, so splitting later is mechanical.
+There are no model files. A service gets a collection with `collection('complaints')` from `config/db.js`, validates input with the module's Zod schema, and sets `createdAt`/`updatedAt` itself.
 
 ### 5.2 Request pipeline
 
@@ -335,7 +344,7 @@ helmet > cors(whitelist) > rateLimit > express.json(limit 100kb) > mongoSanitize
 - Error codes: `VALIDATION_ERROR`, `UNAUTHENTICATED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `RATE_LIMITED`, `INVALID_TRANSITION`.
 - Pagination: `?page=1&limit=20`, `meta: { page, limit, total, totalPages }`, max limit 100.
 - Plural nouns, kebab-case URLs, camelCase JSON, collection names plural camelCase (`complaintUpdates`).
-- Route handlers stay thin: they call named service functions. Business rules and database calls live in those functions, not inside the handlers.
+- Controllers stay thin: validate, call one service function, send the response. Business rules and database calls live in services.
 
 ### 5.4 Environment variables
 
@@ -952,7 +961,7 @@ Admin complaint detail: two columns. Left = complaint and timeline. Right = Tria
 
 1. The app never depends on AI. Every AI call is optional, time-limited and failure-tolerant. With `AI_ENABLED=false` nothing changes.
 2. AI suggests, humans decide. Output is stored as a suggestion; admin accepts or rejects. Auto-apply is a later setting.
-3. One boundary. All AI code lives in the clearly marked AI INTEGRATION part of `index.js`; the rest of the file only talks to `aiOrchestrator`.
+3. One boundary. All AI code lives in `modules/ai`; the rest of the app only talks to `aiOrchestrator`.
 4. HTTP contract, any language for the AI service.
 5. No identity ever crosses the boundary. Only redacted text and metadata are sent.
 
@@ -1138,7 +1147,7 @@ Notifications -> CSV import -> officer-level assignment -> public board -> feedb
 
 Firebase in tests: inject the token verifier as a dependency (production uses `firebase-admin`; tests pass a fake). Never add a debug login route to the real app.
 
-Single-file backend: export the Express `app` from `index.js` and call `listen()` only when `NODE_ENV !== 'test'`, so Supertest can import it.
+Backend entry points: `app.js` exports the Express app and only `server.js` calls `listen()`, so Supertest can import the app without starting a server.
 
 ### 14.2 Tests that matter most
 

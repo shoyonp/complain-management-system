@@ -1,6 +1,6 @@
 import request from 'supertest';
-import { createApp } from '../index.js';
-import { fakeVerifyIdToken } from './helpers/auth.js';
+import { createApp } from '../../src/app.js';
+import { fakeVerifyIdToken } from '../helpers/auth.js';
 
 const app = createApp({ verifyIdToken: fakeVerifyIdToken });
 

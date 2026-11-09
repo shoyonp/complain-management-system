@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { connectDb, disconnectDb, ensureIndexes, getDb } from '../../index.js';
+import { connectDb, disconnectDb, getDb } from '../../src/config/db.js';
+import { ensureIndexes } from '../../src/config/indexes.js';
 
 // Absolute cache path: the default is resolved against process.cwd(), which
 // breaks when tests are run from the repo root (`npm --prefix backend test`).

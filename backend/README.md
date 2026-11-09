@@ -1,6 +1,6 @@
 # DIU Complaint API
 
-Express 5 (ES modules) backend for the privacy-preserving student complaint management system. The entire backend lives in `index.js` as numbered banner sections (blueprint §5.1). **M1 Auth and RBAC** is implemented: Firebase token verification, MongoDB user profiles, role-based authorization, the student-verification queue, and rate limiting.
+Express 5 (ES modules) backend for the privacy-preserving student complaint management system. The API follows the modular structure in blueprint §5.1 under `src/`, with `index.js` as a thin executable launcher. **M1 Auth and RBAC** is implemented: Firebase token verification, MongoDB user profiles, role-based authorization, the student-verification queue, and rate limiting.
 
 ## Requirements
 
@@ -98,7 +98,7 @@ Codes: `VALIDATION_ERROR`, `UNAUTHENTICATED`, `FORBIDDEN`, `PROFILE_REQUIRED`, `
 
 ## Environment variables
 
-Validated at startup by section 1 of `index.js`; invalid or missing values exit the process with a readable message. Nothing else in the codebase reads `process.env` directly.
+Validated at startup by `src/config/env.js`; invalid or missing values exit the process with a readable message. Nothing else in the codebase reads `process.env` directly.
 
 | Variable                | Required  | Notes                                                        |
 | ----------------------- | --------- | ------------------------------------------------------------ |
@@ -119,44 +119,49 @@ Validated at startup by section 1 of `index.js`; invalid or missing values exit 
 
 ## Structure
 
-The entire backend is one file (blueprint §5.1), divided into numbered banner
-sections in this fixed order:
+`index.js` is a thin launcher; all application code lives under `src/` (blueprint §5.1):
 
 ```
-index.js
-  // ===== 1. IMPORTS AND ENV =====              env validation, --memdb boot
-  // ===== 2. CONSTANTS =====                    ROLES, USER_STATUS, PERMISSIONS
-  // ===== 3. FIREBASE ADMIN AND MONGODB =====   lazy firebase-admin, MongoClient
-  // ===== 4. COLLECTION HANDLES, INDEXES AND =====
-  //         DOCUMENT SHAPES =====                 collections.users,
-  //                                              ensureIndexes, Zod shapes
-  // ===== 5. HELPERS =====                      ApiError, asyncHandler, logger,
-  //                                              pagination, escapeRegex, health
-  // ===== 6. MIDDLEWARE =====                   verifyToken, loadUser, authorize,
-  //                                              validate, sanitize, rate limiters
-  // ===== 7. SERIALIZERS =====                  serializeSelf, serializeAdminUser
-  // ===== 8. SERVICES =====                     profile, user list, verification
-  // ===== 9. ROUTES =====                       auth + users + admin users
-  // ===== 10. 404 AND ERROR HANDLER =====       notFound, errorHandler
-  // ===== 11. STARTUP =====                     createApp, export const app,
-  //                                              listen, --seed
-tests/                                          Jest + Supertest
+index.js                       executable entry: imports src/server.js
+src/
+  server.js                    --memdb, connect DB, ensureIndexes(), listen
+  app.js                       createApp({ verifyIdToken }), pipeline, routes, app
+  config/
+    env.js                     .env loading + Zod validation
+    db.js                      MongoClient, getDb(), collection(name)
+    indexes.js                 ensureIndexes()
+    firebase.js                lazy firebase-admin, verifyFirebaseIdToken
+    constants.js               ROLES, USER_STATUS, PERMISSIONS
+    loadEnv.js                 side-effect .env loader (runs before --memdb)
+  middleware/
+    verifyToken.js             createVerifyToken
+    loadUser.js                loadUser + requireActive
+    authorize.js  validate.js  sanitize.js  rateLimiters.js
+    errorHandler.js  notFound.js
+  modules/
+    auth/                      routes, controller, service, schema
+    users/                     routes, controller, service, schema, serializer
+  utils/                       ApiError, asyncHandler, logger, pagination, escapeRegex
+  seed/
+    seed.js                    first administrator (npm run seed)
+tests/                         Jest + Supertest
 ```
 
-Conventions: handlers in section 9 validate, call one service from section 8,
-and serialize the result from section 7. Business rules and driver calls
-(`collections.users.find(...)`) live in services; success is
-`{ success: true, data, meta? }`.
+Conventions: controllers validate, call one service function, and serialize the
+result. Business rules and driver calls (`collection('users').find(...)`) live
+in services; success is `{ success: true, data, meta? }`. Future milestones add
+their own `src/modules/<name>/` folder; no empty placeholders are committed.
 
 ## Deviations from the blueprint
 
-- **`express-mongo-sanitize` replaced** by `sanitizeRequest` (section 6): the package does not support Express 5 (it assigns to the read-only `req.query` getter).
+- **`express-mongo-sanitize` replaced** by `sanitizeRequest` (`src/middleware/sanitize.js`): the package does not support Express 5 (it assigns to the read-only `req.query` getter).
 - **`loadUser` and `requireActive` are separate**: `GET /auth/me` must stay readable for pending/rejected/suspended users, so the account-state gate is applied per route.
 - **Extra error codes** beyond the blueprint list: `PROFILE_REQUIRED`, `ACCOUNT_NOT_ACTIVE`, `EMAIL_NOT_VERIFIED` — the client needs to tell onboarding states apart.
 - **Firebase Admin is imported dynamically** because its `jose` dependency is ESM-only and breaks Jest when tests inject a fake verifier.
 - **Two exports for tests**: `app` is the production instance and `createApp({ verifyIdToken })` lets Supertest inject a fake verifier, as §14.1 requires.
 - **`email` keeps a unique index** even though §6.2 only lists `firebaseUid`: registration returns `409` on a duplicate email, so removing it would change behavior.
-- **`ensureIndexes()` runs on every boot** (server and `--seed`), and the tests call it directly; `createIndex` is idempotent.
+- **`ensureIndexes()` runs on every boot** (server and seed), and the tests call it directly; `createIndex` is idempotent.
+- **`index.js` launcher**: the blueprint names `src/server.js` as the entry point; a one-line `index.js` keeps `nodemon index.js` working. `node src/server.js` also works.
 
 ## Not in this milestone
 

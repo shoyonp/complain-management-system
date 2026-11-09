@@ -1,4 +1,4 @@
-import { sanitizeRequest } from '../../index.js';
+import { sanitizeRequest } from '../../src/middleware/sanitize.js';
 
 const run = (body) => {
   const req = { body };

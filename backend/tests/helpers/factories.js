@@ -1,4 +1,5 @@
-import { PERMISSIONS, ROLES, USER_STATUS, collections } from '../../index.js';
+import { PERMISSIONS, ROLES, USER_STATUS } from '../../src/config/constants.js';
+import { collection } from '../../src/config/db.js';
 
 let counter = 0;
 
@@ -13,7 +14,7 @@ const insertUser = async (document) => {
   const now = new Date();
   const user = { createdAt: now, updatedAt: now, ...document };
 
-  await collections.users.insertOne(user);
+  await collection('users').insertOne(user);
   return user;
 };
 

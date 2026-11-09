@@ -11,7 +11,7 @@
     "dev": "nodemon index.js",
     "dev:memdb": "nodemon index.js --memdb",
     "start": "node index.js",
-    "seed": "node index.js --seed",
+    "seed": "node src/seed/seed.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
