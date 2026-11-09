@@ -8,10 +8,10 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "dev": "nodemon src/server.js",
-    "dev:memdb": "nodemon scripts/dev-memdb.js",
-    "start": "node src/server.js",
-    "seed": "node src/seed/seed.js",
+    "dev": "nodemon index.js",
+    "dev:memdb": "nodemon index.js --memdb",
+    "start": "node index.js",
+    "seed": "node index.js --seed",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

@@ -73,7 +73,7 @@ Run `npm install` in the root once to get Prettier for the shared config.
 - Never store student identity in complaints; staff see the tracking code only (§8).
 - Roles always come from MongoDB, never from the Firebase token (§7.4).
 - One milestone at a time (§13); branches `main` (stable), `dev` (integration), `feature/<name>`.
-- Environment variables are validated at API startup (`backend/src/config/env.js`) and documented in each `.env.example`.
+- Environment variables are validated at API startup (`backend/index.js`, section 1) and documented in each `.env.example`.
 
 ## Documentation
 

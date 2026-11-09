@@ -1,5 +1,4 @@
-import { PERMISSIONS, ROLES, USER_STATUS } from '../../src/config/constants.js';
-import { User } from '../../src/modules/users/user.model.js';
+import { PERMISSIONS, ROLES, USER_STATUS, User } from '../../index.js';
 
 let counter = 0;
 

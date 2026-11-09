@@ -1,7 +1,5 @@
 import request from 'supertest';
-import createApp from '../../src/app.js';
-import { ROLES, USER_STATUS } from '../../src/config/constants.js';
-import { User } from '../../src/modules/users/user.model.js';
+import { ROLES, USER_STATUS, User, createApp } from '../../index.js';
 import { as, fakeVerifyIdToken } from '../helpers/auth.js';
 import { clearTestDb, startTestDb, stopTestDb } from '../helpers/db.js';
 import { createAdmin, createOfficer, createStudent } from '../helpers/factories.js';
